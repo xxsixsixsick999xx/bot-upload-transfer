@@ -1,15 +1,26 @@
 {
-  "name": "auto-post-bot",
+  "name": "bot_upload_transfer",
   "version": "1.0.0",
-  "type": "module",
-  "main": "bot_autopost.js",
+  "description": "",
+  "main": "bot_upload_transfer.js",
   "scripts": {
-    "start": "node bot_autopost.js"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/juicelabs-sys/auto-post-bot.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/juicelabs-sys/auto-post-bot/issues"
+  },
+  "homepage": "https://github.com/juicelabs-sys/auto-post-bot#readme",
   "dependencies": {
-    "express": "^4.18.2",
-    "body-parser": "^1.20.2",
-    "node-telegram-bot-api": "^0.61.0",
-    "node-cron": "^3.0.3"
+    "body-parser": "^2.2.0",
+    "express": "^5.1.0",
+    "googleapis": "^164.1.0",
+    "node-telegram-bot-api": "^0.66.0"
   }
 }
