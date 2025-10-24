@@ -1,16 +1,16 @@
 {
   "name": "bot-upload-transfer",
   "version": "1.0.0",
-  "main": "bot_upload_transfer.js",
   "type": "module",
+  "main": "bot_upload_transfer.js",
   "scripts": {
     "start": "node bot_upload_transfer.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "body-parser": "^1.20.2",
-    "googleapis": "^126.0.1",
-    "node-telegram-bot-api": "^0.63.0",
-    "dotenv": "^16.4.5"
+    "express": "4.18.2",
+    "body-parser": "1.20.2",
+    "googleapis": "126.0.1",
+    "node-telegram-bot-api": "0.63.0",
+    "dotenv": "16.4.5"
   }
 }

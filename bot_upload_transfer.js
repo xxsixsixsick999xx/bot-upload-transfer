@@ -1,6 +1,6 @@
-// ===============================
-// BOT UPLOAD TRANSFER - FINAL VERSION
-// ===============================
+// =======================================
+// BOT UPLOAD TRANSFER (FINAL RENDER VERSION)
+// =======================================
 import express from "express";
 import bodyParser from "body-parser";
 import { google } from "googleapis";
@@ -9,35 +9,31 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-// === Konfigurasi dari Environment ===
+// === Konfigurasi dari environment ===
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
-const SHEET_NAME = process.env.SHEET_NAME;
+const SHEET_NAME = process.env.SHEET_NAME || "Sheet1";
 const PORT = process.env.PORT || 10000;
 
-if (!process.env.GOOGLE_CREDENTIALS) {
-  console.error("⚠️ GOOGLE_CREDENTIALS tidak ditemukan di Environment Variables!");
+if (!TELEGRAM_TOKEN || !SPREADSHEET_ID || !process.env.GOOGLE_CREDENTIALS) {
+  console.error("❌ Missing environment variables. Pastikan semua sudah diset di Render!");
   process.exit(1);
 }
 
+// === Parse Google Credentials ===
 let GOOGLE_CREDENTIALS;
 try {
   GOOGLE_CREDENTIALS = JSON.parse(process.env.GOOGLE_CREDENTIALS);
 } catch (err) {
-  console.error("⚠️ Format GOOGLE_CREDENTIALS salah!");
+  console.error("⚠️ Format GOOGLE_CREDENTIALS salah atau tidak valid JSON!");
   process.exit(1);
 }
 
-if (!TELEGRAM_TOKEN) {
-  console.error("⚠️ TELEGRAM_TOKEN belum diatur!");
-  process.exit(1);
-}
-
-// === Setup Express Server ===
+// === Setup Express ===
 const app = express();
 app.use(bodyParser.json());
 
-// === Setup Telegram Bot (Webhook Mode) ===
+// === Setup Telegram Bot (Webhook) ===
 const bot = new TelegramBot(TELEGRAM_TOKEN);
 const WEBHOOK_URL = `https://bot-upload-transfer.onrender.com/webhook/${TELEGRAM_TOKEN}`;
 
@@ -53,7 +49,7 @@ async function authorize() {
   return auth.getClient();
 }
 
-// === Fungsi menulis data ke Google Sheets ===
+// === Fungsi untuk menambahkan data ke Sheets ===
 async function appendToSheet(data) {
   const authClient = await authorize();
   const sheets = google.sheets({ version: "v4", auth: authClient });
@@ -71,7 +67,7 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, (req, res) => {
   res.sendStatus(200);
 });
 
-// === Pesan awal bot ===
+// === Pesan panduan ===
 bot.onText(/\/start/, (msg) => {
   bot.sendMessage(
     msg.chat.id,
@@ -82,36 +78,37 @@ bot.onText(/\/start/, (msg) => {
 
 // === Handler pesan masuk ===
 bot.on("message", async (msg) => {
-  if (msg.text && msg.text.includes("/")) {
-    const parts = msg.text.split("/");
-    if (parts.length === 3) {
-      const [nama, kode, nominal] = parts;
-      try {
-        await appendToSheet([nama, kode, nominal]);
-        bot.sendMessage(
-          msg.chat.id,
-          `✅ Data tersimpan!\n👤 *Nama:* ${nama}\n💳 *Kode:* ${kode}\n💰 *Nominal:* ${nominal}`,
-          { parse_mode: "Markdown" }
-        );
-      } catch (error) {
-        console.error("❌ Gagal menyimpan:", error.message);
-        bot.sendMessage(
-          msg.chat.id,
-          `⚠️ Gagal menyimpan ke Google Sheets.\nPeriksa kredensial atau izin akses.`,
-          { parse_mode: "Markdown" }
-        );
-      }
-    } else {
-      bot.sendMessage(
-        msg.chat.id,
-        `⚠️ Format salah.\nGunakan format: Nama/Kode/Nominal\nContoh: *Suryani/T02/50000*`,
-        { parse_mode: "Markdown" }
-      );
-    }
+  if (!msg.text || msg.text.startsWith("/")) return;
+
+  const parts = msg.text.split("/");
+  if (parts.length !== 3) {
+    bot.sendMessage(
+      msg.chat.id,
+      `⚠️ Format salah!\nGunakan format: Nama/Kode/Nominal\nContoh: *Suryani/T02/50000*`,
+      { parse_mode: "Markdown" }
+    );
+    return;
+  }
+
+  const [nama, kode, nominal] = parts.map((x) => x.trim());
+  try {
+    await appendToSheet([nama, kode, nominal]);
+    bot.sendMessage(
+      msg.chat.id,
+      `✅ Data tersimpan!\n👤 Nama: ${nama}\n💳 Kode: ${kode}\n💰 Nominal: ${nominal}`,
+      { parse_mode: "Markdown" }
+    );
+  } catch (err) {
+    console.error("❌ Gagal menyimpan:", err.message);
+    bot.sendMessage(
+      msg.chat.id,
+      `⚠️ Gagal menyimpan ke Google Sheets.\nPeriksa kredensial atau izin akses.`,
+      { parse_mode: "Markdown" }
+    );
   }
 });
 
-// === Jalankan Server ===
+// === Jalankan server ===
 app.listen(PORT, () => {
-  console.log(`🚀 Server aktif di port ${PORT}`);
+  console.log(`🚀 Server berjalan di port ${PORT}`);
 });
