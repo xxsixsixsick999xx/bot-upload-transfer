@@ -1,0 +1,14 @@
+{
+  "name": "auto-post-bot",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "bot_autopost.js",
+  "scripts": {
+    "start": "node bot_autopost.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "node-telegram-bot-api": "^0.61.0",
+    "node-schedule": "^2.1.1"
+  }
+}
