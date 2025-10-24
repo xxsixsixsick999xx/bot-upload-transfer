@@ -2,91 +2,101 @@ import express from "express";
 import bodyParser from "body-parser";
 import axios from "axios";
 import { google } from "googleapis";
+import dotenv from "dotenv";
+import fs from "fs";
 
-const app = express();
-app.use(bodyParser.json());
+// ============================================================
+// 1️⃣  Load .env kalau dijalankan lokal
+// ============================================================
+if (fs.existsSync(".env")) {
+  dotenv.config();
+  console.log("📦 .env file loaded (local mode)");
+}
 
-// ====================== KONFIGURASI GOOGLE SHEETS ======================
-
-// Ambil kredensial dari environment variable (Render)
-const GOOGLE_CREDENTIALS = JSON.parse(process.env.GOOGLE_CREDENTIALS);
-
-// Scope API untuk akses Google Sheets
-const SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
-
-// Setup autentikasi Google
-const auth = new google.auth.GoogleAuth({
-  credentials: GOOGLE_CREDENTIALS,
-  scopes: SCOPES,
-});
-
-const sheets = google.sheets({ version: "v4", auth });
-
-// ====================== KONFIGURASI UTAMA ======================
+// ============================================================
+// 2️⃣  Setup variabel environment
+// ============================================================
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 const SHEET_NAME = process.env.SHEET_NAME || "Sheet1";
 const PORT = process.env.PORT || 10000;
 
-// ====================== ROUTE UTAMA UNTUK WEBHOOK ======================
+// Ambil kredensial Google dari Render atau lokal
+let GOOGLE_CREDENTIALS;
+try {
+  GOOGLE_CREDENTIALS = JSON.parse(process.env.GOOGLE_CREDENTIALS);
+} catch (err) {
+  console.error("⚠️ GOOGLE_CREDENTIALS tidak ditemukan atau format salah.");
+}
+
+// ============================================================
+// 3️⃣  Setup Google API client
+// ============================================================
+const auth = new google.auth.GoogleAuth({
+  credentials: GOOGLE_CREDENTIALS,
+  scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+});
+const sheets = google.sheets({ version: "v4", auth });
+
+// ============================================================
+// 4️⃣  Setup Express server
+// ============================================================
+const app = express();
+app.use(bodyParser.json());
+
+// ============================================================
+// 5️⃣  Handle pesan Telegram
+// ============================================================
 app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
   try {
     const message = req.body.message;
-    if (!message || !message.text) {
-      return res.sendStatus(200);
-    }
+    if (!message || !message.text) return res.sendStatus(200);
 
     const chatId = message.chat.id;
     const text = message.text.trim();
 
-    // Format pesan harus: Nama/Kode/Nominal
-    const pattern = /^([\w\s]+)\/(T\d{2})\/(\d+)$/i;
-    const match = text.match(pattern);
+    // Format: Nama/Kode/Nominal
+    const regex = /^([\w\s]+)\/(T\d{2})\/(\d+)$/i;
+    const match = text.match(regex);
 
-    // Jika format salah
     if (!match) {
       await sendMessage(
         chatId,
-        "📬 Kirim data dengan format:\nNama/Kode/Nominal\nContoh: *Suryani/T02/50000*",
+        "❗ Format salah.\nGunakan format:\nNama/Kode/Nominal\nContoh: *Suryani/T01/50000*",
         "Markdown"
       );
       return res.sendStatus(200);
     }
 
     const [, nama, kode, nominal] = match;
+    const tanggal = new Date().toLocaleString("id-ID");
 
-    // Simpan data ke Google Sheets
-    try {
-      await sheets.spreadsheets.values.append({
-        spreadsheetId: SPREADSHEET_ID,
-        range: `${SHEET_NAME}!A:C`,
-        valueInputOption: "USER_ENTERED",
-        requestBody: {
-          values: [[nama, kode, nominal]],
-        },
-      });
+    // Simpan ke Google Sheets
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${SHEET_NAME}!A:D`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: {
+        values: [[tanggal, nama, kode, nominal]],
+      },
+    });
 
-      await sendMessage(
-        chatId,
-        `✅ Data berhasil disimpan!\n📄 *Nama:* ${nama}\n💳 *Kode:* ${kode}\n💰 *Nominal:* ${nominal}`,
-        "Markdown"
-      );
-    } catch (err) {
-      console.error("❌ Gagal menyimpan:", err.message);
-      await sendMessage(
-        chatId,
-        "⚠️ Gagal menyimpan ke Google Sheets.\nPeriksa kredensial atau izin akses."
-      );
-    }
+    await sendMessage(
+      chatId,
+      `✅ Data tersimpan!\n📅 ${tanggal}\n👤 Nama: *${nama}*\n💳 Kode: *${kode}*\n💰 Nominal: *${nominal}*`,
+      "Markdown"
+    );
 
     res.sendStatus(200);
-  } catch (error) {
-    console.error("Error handling message:", error);
+  } catch (err) {
+    console.error("❌ Gagal menyimpan:", err.message);
     res.sendStatus(500);
   }
 });
 
-// ====================== FUNGSI UNTUK KIRIM PESAN TELEGRAM ======================
+// ============================================================
+// 6️⃣  Kirim pesan ke Telegram
+// ============================================================
 async function sendMessage(chatId, text, parseMode = "Markdown") {
   try {
     await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
@@ -94,15 +104,17 @@ async function sendMessage(chatId, text, parseMode = "Markdown") {
       text,
       parse_mode: parseMode,
     });
-  } catch (err) {
-    console.error("❌ Gagal kirim pesan:", err.message);
+  } catch (error) {
+    console.error("⚠️ Gagal kirim pesan:", error.message);
   }
 }
 
-// ====================== MENJALANKAN SERVER & SET WEBHOOK ======================
+// ============================================================
+// 7️⃣  Jalankan server dan atur webhook
+// ============================================================
 app.listen(PORT, async () => {
   const webhookUrl = `https://${process.env.RENDER_EXTERNAL_HOSTNAME || "bot-upload-transfer.onrender.com"}/webhook/${TELEGRAM_TOKEN}`;
-  console.log(`🚀 Server berjalan di port ${PORT}`);
+  console.log(`🚀 Server aktif di port ${PORT}`);
 
   try {
     await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/setWebhook`, {
@@ -110,6 +122,6 @@ app.listen(PORT, async () => {
     });
     console.log(`✅ Webhook aktif di: ${webhookUrl}`);
   } catch (err) {
-    console.error("❌ Gagal mengatur webhook:", err.message);
+    console.error("❌ Gagal set webhook:", err.message);
   }
 });
