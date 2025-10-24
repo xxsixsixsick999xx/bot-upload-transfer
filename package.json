@@ -1,6 +1,7 @@
 {
   "name": "bot_upload_transfer",
   "version": "1.0.0",
+  "description": "Telegram bot upload transfer ke Google Sheets",
   "main": "bot_upload_transfer.js",
   "type": "module",
   "scripts": {
