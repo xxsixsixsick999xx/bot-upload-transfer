@@ -1,5 +1,5 @@
 // ===============================
-// BOT UPLOAD BUKTI TRANSFER KE GOOGLE SHEETS (WEBHOOK MODE)
+// BOT TELEGRAM UPLOAD TRANSFER + GOOGLE SHEETS (WEBHOOK MODE)
 // ===============================
 
 import express from "express";
@@ -7,25 +7,25 @@ import bodyParser from "body-parser";
 import TelegramBot from "node-telegram-bot-api";
 import { google } from "googleapis";
 
-// === Konfigurasi dari Environment Variable ===
+// === KONFIGURASI DARI ENVIRONMENT ===
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 const SHEET_NAME = process.env.SHEET_NAME;
 const GOOGLE_CREDENTIALS = JSON.parse(process.env.GOOGLE_CREDENTIALS);
 const PORT = process.env.PORT || 10000;
 
-// === Inisialisasi Express ===
+// === INISIALISASI EXPRESS ===
 const app = express();
 app.use(bodyParser.json());
 
-// === Inisialisasi Telegram Bot (Mode Webhook) ===
+// === INISIALISASI TELEGRAM BOT (WEBHOOK MODE) ===
 const bot = new TelegramBot(TELEGRAM_TOKEN);
-const WEBHOOK_URL = `https://YOUR-RENDER-APP-NAME.onrender.com/webhook/${TELEGRAM_TOKEN}`;
+const WEBHOOK_URL = `https://bot-upload-transfer.onrender.com/webhook/${TELEGRAM_TOKEN}`;
 
 await bot.setWebHook(WEBHOOK_URL);
-console.log("✅ Webhook terhubung di:", WEBHOOK_URL);
+console.log("✅ Webhook aktif di:", WEBHOOK_URL);
 
-// === Fungsi koneksi ke Google Sheets ===
+// === AUTENTIKASI GOOGLE SHEETS ===
 async function authorize() {
   const auth = new google.auth.GoogleAuth({
     credentials: GOOGLE_CREDENTIALS,
@@ -34,8 +34,8 @@ async function authorize() {
   return auth.getClient();
 }
 
-// === Fungsi menulis data ke Google Sheets ===
-async function appendToSheet(data) {
+// === SIMPAN DATA KE SHEETS ===
+async function appendToSheet(nama, kode, nominal) {
   const authClient = await authorize();
   const sheets = google.sheets({ version: "v4", auth: authClient });
   await sheets.spreadsheets.values.append({
@@ -43,46 +43,72 @@ async function appendToSheet(data) {
     range: `${SHEET_NAME}!A:C`,
     valueInputOption: "USER_ENTERED",
     requestBody: {
-      values: [data],
+      values: [[nama, kode, nominal]],
     },
   });
 }
 
-// === Handler untuk update Telegram ===
-app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
-  const update = req.body;
-  bot.processUpdate(update);
+// === ROUTE UNTUK WEBHOOK ===
+app.post(`/webhook/${TELEGRAM_TOKEN}`, (req, res) => {
+  bot.processUpdate(req.body);
   res.sendStatus(200);
 });
 
-// === Saat user mengirim foto dengan caption ===
+// === HANDLE FOTO + CAPTION ===
 bot.on("photo", async (msg) => {
-  const caption = msg.caption;
-  if (!caption) {
-    bot.sendMessage(msg.chat.id, "❌ Harap kirim foto dengan caption: nama kode nominal");
-    return;
-  }
-
-  const parts = caption.trim().split(/\s+/);
-  if (parts.length < 3) {
-    bot.sendMessage(msg.chat.id, "⚠️ Format salah!\nGunakan format: `nama kode nominal`\nContoh: `suryani22 t02 900000`", { parse_mode: "Markdown" });
-    return;
-  }
-
-  const nama = parts[0];
-  const kode = parts[1].toUpperCase();
-  const nominal = parts[2];
-
   try {
-    await appendToSheet([nama, kode, nominal]);
-    bot.sendMessage(msg.chat.id, `✅ Data berhasil disimpan!\n\n*Nama:* ${nama}\n*Kode:* ${kode}\n*Nominal:* Rp${nominal}`, { parse_mode: "Markdown" });
+    const caption = msg.caption || "";
+    const parts = caption.split("/");
+
+    const nama = parts[0]?.trim();
+    const kode = parts[1]?.trim();
+    const nominal = parts[2]?.trim();
+
+    if (!nama || !kode || !nominal) {
+      await bot.sendMessage(
+        msg.chat.id,
+        "❌ Format tidak valid.\nGunakan format:\n`Nama/Kode/Nominal`",
+        { parse_mode: "Markdown" }
+      );
+      return;
+    }
+
+    await appendToSheet(nama, kode, nominal);
+    await bot.sendMessage(
+      msg.chat.id,
+      `✅ Data berhasil disimpan!\n\n📋 Nama: *${nama}*\n🏷️ Kode: *${kode}*\n💰 Nominal: *${nominal}*`,
+      { parse_mode: "Markdown" }
+    );
+
+    console.log(`✅ Data tersimpan: ${nama} | ${kode} | ${nominal}`);
   } catch (err) {
-    console.error("❌ ERROR appendToSheet:", err.message);
-    bot.sendMessage(msg.chat.id, "⚠️ Gagal menyimpan data ke Google Sheets.");
+    console.error("❌ Error menyimpan data:", err);
+    await bot.sendMessage(
+      msg.chat.id,
+      "⚠️ Gagal menyimpan ke Google Sheets.\nPeriksa izin atau kredensial.",
+      { parse_mode: "Markdown" }
+    );
   }
 });
 
-// === Jalankan server ===
+// === HANDLE /start DAN /help ===
+bot.onText(/\/start/, (msg) => {
+  bot.sendMessage(
+    msg.chat.id,
+    `👋 Halo ${msg.from.first_name || "user"}!\n\nKirim *foto bukti transfer* dengan caption berformat:\n\n\`Nama/Kode/Nominal\`\n\nContoh:\n\`Suryani22/T02/50000\``,
+    { parse_mode: "Markdown" }
+  );
+});
+
+bot.onText(/\/help/, (msg) => {
+  bot.sendMessage(
+    msg.chat.id,
+    `📘 *Panduan Penggunaan Bot:*\n\n1️⃣ Kirim foto bukti transfer\n2️⃣ Tulis caption seperti berikut:\n\`Nama/Kode/Nominal\`\n\nContoh:\n\`Rudi/T01/150000\`\n\nData otomatis tersimpan ke Google Sheets.`,
+    { parse_mode: "Markdown" }
+  );
+});
+
+// === JALANKAN SERVER EXPRESS ===
 app.listen(PORT, () => {
   console.log(`🚀 Server berjalan di port ${PORT}`);
 });
