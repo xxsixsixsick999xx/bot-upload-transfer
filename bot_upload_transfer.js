@@ -1,113 +1,98 @@
-// ================================================
-// BOT UPLOAD TRANSFER (FINAL FIX: SUPPORT CAPTION + TEXT)
-// ================================================
-
 import express from "express";
 import bodyParser from "body-parser";
-import TelegramBot from "node-telegram-bot-api";
+import axios from "axios";
+import fs from "fs";
 import { google } from "googleapis";
 
-// === ENVIRONMENT VARIABLE ===
-const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
-const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
-const SHEET_NAME = process.env.SHEET_NAME;
-const GOOGLE_CREDENTIALS = JSON.parse(process.env.GOOGLE_CREDENTIALS);
-const PORT = process.env.PORT || 10000;
-
-// === CEK KONFIGURASI ===
-if (!TELEGRAM_TOKEN || !SPREADSHEET_ID || !SHEET_NAME || !GOOGLE_CREDENTIALS) {
-  console.error("❌ Environment variable belum lengkap!");
-  process.exit(1);
-}
-
-// === INISIALISASI ===
 const app = express();
 app.use(bodyParser.json());
-const bot = new TelegramBot(TELEGRAM_TOKEN);
-const WEBHOOK_URL = `https://bot-upload-transfer.onrender.com/webhook/${TELEGRAM_TOKEN}`;
 
-await bot.setWebHook(WEBHOOK_URL);
-console.log(`✅ Webhook aktif di: ${WEBHOOK_URL}`);
+// ================== KONFIGURASI GOOGLE SHEETS ===================
+const GOOGLE_CREDENTIALS = JSON.parse(fs.readFileSync("./google-credentials.json", "utf8"));
+const SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
+const auth = new google.auth.GoogleAuth({
+  credentials: GOOGLE_CREDENTIALS,
+  scopes: SCOPES,
+});
+const sheets = google.sheets({ version: "v4", auth });
 
-// === AUTENTIKASI GOOGLE ===
-async function authorize() {
-  const auth = new google.auth.GoogleAuth({
-    credentials: GOOGLE_CREDENTIALS,
-    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
-  });
-  return await auth.getClient();
-}
+// ================== VARIABEL LINGKUNGAN ===================
+const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
+const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
+const SHEET_NAME = process.env.SHEET_NAME || "Sheet1";
+const PORT = process.env.PORT || 10000;
 
-// === SIMPAN DATA KE SHEETS ===
-async function appendToSheet(values) {
-  try {
-    const auth = await authorize();
-    const sheets = google.sheets({ version: "v4", auth });
-    await sheets.spreadsheets.values.append({
-      spreadsheetId: SPREADSHEET_ID,
-      range: `${SHEET_NAME}!A:C`,
-      valueInputOption: "USER_ENTERED",
-      requestBody: { values: [values] },
-    });
-    console.log("✅ Data tersimpan:", values);
-    return true;
-  } catch (err) {
-    console.error("❌ Gagal menyimpan:", err.response?.data || err.message);
-    return false;
-  }
-}
-
-// === ROUTE UNTUK TELEGRAM WEBHOOK ===
+// ================== TELEGRAM WEBHOOK ===================
 app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
   try {
-    const update = req.body;
-    if (update.message) {
-      const msg = update.message;
-      // Ambil teks baik dari text maupun caption
-      const text = msg.text?.trim() || msg.caption?.trim();
-
-      if (text && text.includes("/")) {
-        const parts = text.split("/");
-        if (parts.length === 3) {
-          const [nama, kode, nominal] = parts.map((v) => v.trim());
-          const result = await appendToSheet([nama, kode, nominal]);
-          if (result) {
-            await bot.sendMessage(
-              msg.chat.id,
-              `✅ Data berhasil disimpan ke Google Sheets:\n👤 *Nama:* ${nama}\n💳 *Kode:* ${kode}\n💰 *Nominal:* ${nominal}`,
-              { parse_mode: "Markdown" }
-            );
-          } else {
-            await bot.sendMessage(
-              msg.chat.id,
-              "⚠️ Gagal menyimpan ke Google Sheets. Periksa kredensial atau izin akses."
-            );
-          }
-        } else {
-          await bot.sendMessage(
-            msg.chat.id,
-            "❌ Format salah.\nGunakan format: `Nama/Kode/Nominal`\nContoh: `Suryani/T02/50000`",
-            { parse_mode: "Markdown" }
-          );
-        }
-      } else {
-        await bot.sendMessage(
-          msg.chat.id,
-          "📩 Kirim data dengan format:\n`Nama/Kode/Nominal`\nContoh: `Suryani/T02/50000`",
-          { parse_mode: "Markdown" }
-        );
-      }
+    const message = req.body.message;
+    if (!message || !message.text) {
+      return res.sendStatus(200);
     }
 
-    // WAJIB agar tidak error 503
+    const chatId = message.chat.id;
+    const text = message.text.trim();
+
+    // Format valid: Nama/Kode/Nominal
+    const pattern = /^([\w\s]+)\/(T\d{2})\/(\d+)$/i;
+    const match = text.match(pattern);
+
+    if (!match) {
+      await sendMessage(chatId, "📬 Kirim data dengan format:\nNama/Kode/Nominal\nContoh: *Suryani/T02/50000*", "Markdown");
+      return res.sendStatus(200);
+    }
+
+    const [, nama, kode, nominal] = match;
+
+    // Simpan ke Google Sheets
+    try {
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${SHEET_NAME}!A:C`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [[nama, kode, nominal]],
+        },
+      });
+
+      await sendMessage(chatId, `✅ Data tersimpan!\n📄 *Nama:* ${nama}\n💳 *Kode:* ${kode}\n💰 *Nominal:* ${nominal}`, "Markdown");
+    } catch (err) {
+      console.error("❌ Gagal menyimpan:", err.message);
+      await sendMessage(chatId, "⚠️ Gagal menyimpan ke Google Sheets. Periksa kredensial atau izin akses.");
+    }
+
     res.sendStatus(200);
-  } catch (err) {
-    console.error("❌ Webhook error:", err.message);
-    res.sendStatus(200);
+  } catch (error) {
+    console.error("Error handling message:", error);
+    res.sendStatus(500);
   }
 });
 
-// === JALANKAN SERVER ===
-app.listen(PORT, () => {
+// ================== FUNGSI KIRIM PESAN TELEGRAM ===================
+async function sendMessage(chatId, text, parseMode = "Markdown") {
+  try {
+    await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+      chat_id: chatId,
+      text,
+      parse_mode: parseMode,
+    });
+  } catch (err) {
+    console.error("❌ Gagal kirim pesan:", err.message);
+  }
+}
+
+// ================== JALANKAN SERVER ===================
+app.listen(PORT, async () => {
   console.log(`🚀 Server berjalan di port ${PORT}`);
+
+  const webhookUrl = `https://${process.env.RENDER_EXTERNAL_HOSTNAME || "bot-upload-transfer.onrender.com"}/webhook/${TELEGRAM_TOKEN}`;
+
+  try {
+    await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/setWebhook`, {
+      url: webhookUrl,
+    });
+    console.log(`✅ Webhook aktif di: ${webhookUrl}`);
+  } catch (err) {
+    console.error("❌ Gagal mengatur webhook:", err.message);
+  }
 });
