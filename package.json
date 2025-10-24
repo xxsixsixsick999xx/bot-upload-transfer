@@ -1,17 +1,25 @@
 {
   "name": "bot-upload-transfer",
   "version": "1.0.0",
-  "type": "module",
+  "description": "Telegram bot to upload transfer data to Google Sheets",
   "main": "bot_upload_transfer.js",
+  "type": "module",
   "scripts": {
     "start": "node bot_upload_transfer.js"
   },
   "dependencies": {
-    "body-parser": "1.20.2",
-    "dotenv": "16.4.5",
-    "express": "^4.18.2",
-    "googleapis": "126.0.1",
-    "node-telegram-bot-api": "0.63.0",
-    "path-to-regexp": "0.1.7"
-  }
+    "axios": "^1.6.8",
+    "express": "^4.19.2",
+    "googleapis": "^131.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "telegram-bot",
+    "google-sheets",
+    "render"
+  ],
+  "author": "incesunited",
+  "license": "MIT"
 }
